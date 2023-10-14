@@ -4,6 +4,7 @@ from copy import copy
 from os import environ
 from rich import print
 
+import tiktoken
 import openai
 
 from .base_translator import Base
@@ -52,6 +53,55 @@ class ChatGPTAPI(Base):
     def rotate_key(self):
         openai.api_key = next(self.keys)
 
+    def count_tokens(self,string: str, encoding_name: str = "cl100k_base") -> int:
+        """Returns the number of tokens in a text string."""
+        encoding = tiktoken.get_encoding(encoding_name)
+        num_tokens = len(encoding.encode(string))
+        return num_tokens
+
+    def create_chat_completion_2pass(self, text):
+        system_message = "You are a professional translation engine. You translate accurately, fluently and reliably."
+        # user_message = f"Translate to {self.language}, return only translated content, don't include original text. Text to be translated:\n{text}"
+        translation_prompt=f'''
+You are tasked to translate some give text to: {self.language}
+Rules:
+- Retain specific terms or names of original language, and surround them with spaces, for example: "中 UN 文".
+- Divide the translation into two parts and print each result:
+1. Translate directly based on the news content, without omitting any information.
+2. Based on the first direct translation, rephrase it to make the content more easily understood and conform to {self.language} expression habits, while adhering to the original meaning.
+Return in following json format:
+{{"Direct translation":"DIRECT_TRANSLATION_TEXT"}}
+{{"Better translation":"BETTER_TRANSLATION_TEXT"}}
+Reply OK to this message and I'll send you text to be translated to {self.language} afterwards.'''
+
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": translation_prompt},
+            {"role": "assistant", "content": "OK"},
+            {"role": "user", "content": text},
+        ]
+
+        if self.deployment_id:
+            return openai.ChatCompletion.create(
+                engine=self.deployment_id,
+                messages=messages,
+                temperature=self.temperature,
+            )
+
+        text_length=self.count_tokens(system_message+translation_prompt+text+"OK")
+        if text_length<=1200:
+            return openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+                temperature=self.temperature,
+            )
+        else:
+            return openai.ChatCompletion.create(
+                model="gpt-3.5-turbo-16k",
+                messages=messages,
+                temperature=self.temperature,
+            )
+
     def create_chat_completion(self, text):
         content = self.prompt_template.format(
             text=text, language=self.language, crlf="\n"
@@ -74,13 +124,13 @@ class ChatGPTAPI(Base):
             messages=messages,
             temperature=self.temperature,
         )
-
+    
     def get_translation(self, text):
         self.rotate_key()
 
         completion = {}
         try:
-            completion = self.create_chat_completion(text)
+            completion = self.create_chat_completion_2pass(text)
         except Exception:
             if (
                 "choices" not in completion
@@ -88,13 +138,20 @@ class ChatGPTAPI(Base):
                 or len(completion["choices"]) == 0
             ):
                 raise
-            if completion["choices"][0]["finish_reason"] != "length":
+            if completion["choices"][-1]["finish_reason"] != "length":
                 raise
 
         # work well or exception finish by length limit
-        choice = completion["choices"][0]
+        choice = completion["choices"][-1]
 
-        t_text = choice.get("message").get("content", "").encode("utf8").decode()
+        response_text = choice.get("message").get("content", "").encode("utf8").decode()
+        pattern = r'{"Better translation"\s*:\s*"([\s\S]*)"}'
+        match = re.search(pattern, response_text)
+        
+        if match:
+            t_text = match.group(1)
+        else:
+            t_text = response_text
 
         if choice["finish_reason"] == "length":
             with open("log/long_text.txt", "a") as f:
@@ -105,7 +162,7 @@ The total token is too long and cannot be completely translated\n
 """,
                     file=f,
                 )
-
+        
         return t_text
 
     def translate(self, text, needprint=True):
@@ -121,6 +178,7 @@ The total token is too long and cannot be completely translated\n
         while attempt_count < max_attempts:
             try:
                 t_text = self.get_translation(text)
+                if '{"Direct translation"' in t_text and attempt_count<=1: continue # if failed to capture 2pass result for some reason retry
                 break
             except Exception as e:
                 # todo: better sleep time? why sleep alawys about key_len
