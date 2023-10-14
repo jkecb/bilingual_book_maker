@@ -65,13 +65,13 @@ class ChatGPTAPI(Base):
         translation_prompt=f'''
 You are tasked to translate some give text to: {self.language}
 Rules:
-- Retain specific terms or names of original language, and surround them with spaces, for example: "中 UN 文".
+- Retain specific terms or names of original language, and surround them with spaces, for example: "中 Joe 文".
 - Divide the translation into two parts and print each result:
-1. Translate directly based on the news content, without omitting any information.
+1. Translate directly based on the content, without omitting any information.
 2. Based on the first direct translation, rephrase it to make the content more easily understood and conform to {self.language} expression habits, while adhering to the original meaning.
-Return in following json format:
-{{"Direct translation":"DIRECT_TRANSLATION_TEXT"}}
-{{"Better translation":"BETTER_TRANSLATION_TEXT"}}
+Return in following format:
+Direct translation: DIRECT_TRANSLATION_TEXT
+Better translation: BETTER_TRANSLATION_TEXT
 Reply OK to this message and I'll send you text to be translated to {self.language} afterwards.'''
 
         messages = [
@@ -145,7 +145,7 @@ Reply OK to this message and I'll send you text to be translated to {self.langua
         choice = completion["choices"][-1]
 
         response_text = choice.get("message").get("content", "").encode("utf8").decode()
-        pattern = r'{"Better translation"\s*:\s*"([\s\S]*)"}'
+        pattern = r'Better translation:\s*([\s\S]*)'
         match = re.search(pattern, response_text)
         
         if match:
@@ -178,7 +178,8 @@ The total token is too long and cannot be completely translated\n
         while attempt_count < max_attempts:
             try:
                 t_text = self.get_translation(text)
-                if '{"Direct translation"' in t_text and attempt_count<=1: continue # if failed to capture 2pass result for some reason retry
+                if 'Direct translation:' in t_text and attempt_count==0: 
+                    continue # if failed to capture 2pass result for some reason retry
                 break
             except Exception as e:
                 # todo: better sleep time? why sleep alawys about key_len
