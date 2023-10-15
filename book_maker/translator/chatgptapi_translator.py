@@ -62,19 +62,19 @@ class ChatGPTAPI(Base):
         return num_tokens
 
     def create_chat_completion_2pass(self, text):
-        system_message = "You are a professional translation engine. You translate accurately, fluently and reliably."
+        system_message = "You are a professional translator. You always translate accurately, fluently and reliably."
         # user_message = f"Translate to {self.language}, return only translated content, don't include original text. Text to be translated:\n{text}"
         translation_prompt=f'''
 Translation Guideline:
-- Retain specific terms of original language, and surround them with spaces, for example: "中 Joe 文".
+- Retain specific terms/names, put it after the translation in brackets, for example: "乔（Joe）".
 - Divide the translation into two parts and print each result:
 1. Translate directly based on the content, without omitting any information.
 2. Based on the first direct translation, rephrase it to make the content more easily understood and conform to {self.language} expression habits, while adhering to the original meaning.
-Without any comment, return the result in the following JSON format:
+Without any comment, return the result in the following format:
 [{{
-    "trans_lang": "{self.language}",
-    "direct_trans": "direct translation here",
-    "better_trans": "better translation here"
+    "translation_language": "{self.language}",
+    "direct_translation": "direct translation here",
+    "better_translation": "better translation here",
 }}]
 Reply OK to this message and I'll send you text to be translated to {self.language} afterwards.'''
 
@@ -82,7 +82,7 @@ Reply OK to this message and I'll send you text to be translated to {self.langua
             {"role": "system", "content": system_message},
             {"role": "user", "content": translation_prompt},
             {"role": "assistant", "content": "OK"},
-            {"role": "user", "content": text},
+            {"role": "user", "content": f'{{"text": "{text}"}}'},
         ]
 
         if self.deployment_id:
@@ -158,7 +158,7 @@ Reply OK to this message and I'll send you text to be translated to {self.langua
         choice = completion["choices"][-1]
 
         response_text = choice.get("message").get("content", "").encode("utf8").decode()
-        pattern = r'"better_trans":\s*[“"”]([\s\S]*)[“"”]\n?}'
+        pattern = r'"better_translation":[\s\n]*[“"”]([\s\S]*?)[“"”]?,?[\s\n]*}'
         match = re.search(pattern, response_text)
         
         if match:
@@ -176,7 +176,7 @@ The total token is too long and cannot be completely translated\n
                     file=f,
                 )
         
-        return t_text
+        return t_text.replace('\\n', '\n')
 
     def translate(self, text, needprint=True):
         start_time = time.time()
@@ -195,7 +195,7 @@ The total token is too long and cannot be completely translated\n
                     print(f"Response illegal, retrying...\nResponse={t_text}")
                     attempt_count += 1
                     continue # if failed to capture 2pass result for some reason retry
-                elif attempt_count>0:
+                elif '_trans":' in t_text and attempt_count>0:
                     t_text = t_text.split('_trans":')[-1]
                 break
             except Exception as e:
