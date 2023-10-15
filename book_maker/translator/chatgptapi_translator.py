@@ -49,6 +49,8 @@ class ChatGPTAPI(Base):
         self.system_content = environ.get("OPENAI_API_SYS_MSG") or ""
         self.deployment_id = None
         self.temperature = temperature
+        self.completion_spent = 0
+        self.prompt_spent = 0
 
     def rotate_key(self):
         openai.api_key = next(self.keys)
@@ -63,15 +65,17 @@ class ChatGPTAPI(Base):
         system_message = "You are a professional translation engine. You translate accurately, fluently and reliably."
         # user_message = f"Translate to {self.language}, return only translated content, don't include original text. Text to be translated:\n{text}"
         translation_prompt=f'''
-You are tasked to translate some give text to: {self.language}
 Rules:
-- Retain specific terms or names of original language, and surround them with spaces, for example: "中 Joe 文".
+- Retain specific terms of original language, and surround them with spaces, for example: "中 Joe 文".
 - Divide the translation into two parts and print each result:
 1. Translate directly based on the content, without omitting any information.
 2. Based on the first direct translation, rephrase it to make the content more easily understood and conform to {self.language} expression habits, while adhering to the original meaning.
-Return in following format:
-Direct translation: DIRECT_TRANSLATION_TEXT
-Better translation: BETTER_TRANSLATION_TEXT
+Without any comment, return the result in the following JSON format:
+[{{
+    "trans_lang": "{self.language}",
+    "direct_trans": "direct translation here",
+    "better_trans": "better translation here"
+}}]
 Reply OK to this message and I'll send you text to be translated to {self.language} afterwards.'''
 
         messages = [
@@ -140,12 +144,21 @@ Reply OK to this message and I'll send you text to be translated to {self.langua
                 raise
             if completion["choices"][-1]["finish_reason"] != "length":
                 raise
+        
+        # Calculate fare
+        if '16k' in completion['model']:
+            self.prompt_spent+=completion['usage']['prompt_tokens']*3
+            self.completion_spent+=completion['usage']['completion_tokens']*4
+        else:
+            self.prompt_spent+=completion['usage']['prompt_tokens']*1.5
+            self.completion_spent+=completion['usage']['completion_tokens']*2
+        print(f"Prompt spent: ${self.prompt_spent/1e6}\nCompletion spent: ${self.completion_spent/1e6}\nTotal spent: ${(self.prompt_spent+self.completion_spent)/1e6}")
 
         # work well or exception finish by length limit
         choice = completion["choices"][-1]
 
         response_text = choice.get("message").get("content", "").encode("utf8").decode()
-        pattern = r'Better translation:\s*([\s\S]*)'
+        pattern = r'"better_trans":\s*[“"”]([\s\S]*)[“"”]\n?}'
         match = re.search(pattern, response_text)
         
         if match:
@@ -178,7 +191,8 @@ The total token is too long and cannot be completely translated\n
         while attempt_count < max_attempts:
             try:
                 t_text = self.get_translation(text)
-                if 'Direct translation:' in t_text and attempt_count==0: 
+                if '"direct_trans":' in t_text and attempt_count==0: 
+                    print(f"Response illegal, retrying...\nResponse={t_text}")
                     continue # if failed to capture 2pass result for some reason retry
                 break
             except Exception as e:
