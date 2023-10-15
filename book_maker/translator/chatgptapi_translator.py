@@ -65,7 +65,7 @@ class ChatGPTAPI(Base):
         system_message = "You are a professional translation engine. You translate accurately, fluently and reliably."
         # user_message = f"Translate to {self.language}, return only translated content, don't include original text. Text to be translated:\n{text}"
         translation_prompt=f'''
-Rules:
+Translation Guideline:
 - Retain specific terms of original language, and surround them with spaces, for example: "中 Joe 文".
 - Divide the translation into two parts and print each result:
 1. Translate directly based on the content, without omitting any information.
@@ -193,7 +193,10 @@ The total token is too long and cannot be completely translated\n
                 t_text = self.get_translation(text)
                 if '"direct_trans":' in t_text and attempt_count==0: 
                     print(f"Response illegal, retrying...\nResponse={t_text}")
+                    attempt_count += 1
                     continue # if failed to capture 2pass result for some reason retry
+                elif attempt_count>0:
+                    t_text = t_text.split('_trans":')[-1]
                 break
             except Exception as e:
                 # todo: better sleep time? why sleep alawys about key_len
