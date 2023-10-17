@@ -70,19 +70,16 @@ Translation Guideline:
 - Divide the translation into two parts and print each result:
 1. Translate directly based on the content, without omitting any information.
 2. Based on the first direct translation, rephrase it to make the content more easily understood and conform to {self.language} expression habits, while adhering to the original meaning.
-Without any comment, return the result in the following format:
-[{{
-    "translation_language": "{self.language}",
-    "direct_translation": "direct translation here",
-    "better_translation": "better translation here",
-}}]
+Without any comment, return the result in the following python dict format:
+[{{"direct_translation": "direct translation here",
+"better_translation": "better translation here",}}]
 Reply OK to this message and I'll send you text to be translated to {self.language} afterwards.'''
 
         messages = [
             {"role": "system", "content": system_message},
             {"role": "user", "content": translation_prompt},
             {"role": "assistant", "content": "OK"},
-            {"role": "user", "content": f'{{"text": "{text}"}}'},
+            {"role": "user", "content": f'{{"text": "{text}","target_language": "{self.language}",}}'},
         ]
 
         if self.deployment_id:
