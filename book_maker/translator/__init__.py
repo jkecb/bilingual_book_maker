@@ -14,6 +14,8 @@ MODEL_DICT = {
     "openai": ChatGPTAPI,
     "chatgptapi": ChatGPTAPI,
     "gpt4": ChatGPTAPI,
+    "gpt41": ChatGPTAPI,
+    "gpt41mini": ChatGPTAPI,
     "gpt4omini": ChatGPTAPI,
     "gpt4o": ChatGPTAPI,
     "o1preview": ChatGPTAPI,

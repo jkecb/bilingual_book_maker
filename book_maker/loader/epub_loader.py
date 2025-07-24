@@ -35,6 +35,7 @@ class EPUBBookLoader(BaseBookLoader):
         context_flag=False,
         context_paragraph_limit=0,
         temperature=1.0,
+        concurrency=8,
     ):
         self.epub_name = epub_name
         self.new_epub = epub.EpubBook()
@@ -45,6 +46,7 @@ class EPUBBookLoader(BaseBookLoader):
             context_flag=context_flag,
             context_paragraph_limit=context_paragraph_limit,
             temperature=temperature,
+            concurrency=concurrency,
             **prompt_config_to_kwargs(prompt_config),
         )
         self.is_test = is_test
@@ -144,6 +146,7 @@ class EPUBBookLoader(BaseBookLoader):
     def _process_paragraph(self, p, new_p, index, p_to_save_len):
         if self.resume and index < p_to_save_len:
             p.string = self.p_to_save[index]
+            self.translate_model.calculate_cached_cost(new_p.text, p.string)
         else:
             t_text = ""
             if self.batch_flag:
@@ -613,4 +616,4 @@ class EPUBBookLoader(BaseBookLoader):
             with open(self.bin_path, "wb") as f:
                 pickle.dump(self.p_to_save, f)
         except Exception:
-            raise Exception("can not save resume file")
+            raise Exception("can not load resume file")

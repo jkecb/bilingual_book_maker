@@ -202,7 +202,7 @@ def main():
         "--model",
         dest="model",
         type=str,
-        default="chatgptapi",
+        default="gpt41mini",
         choices=translate_model_list,  # support DeepL later
         metavar="MODEL",
         help="model to use, available: {%(choices)s}",
@@ -384,6 +384,12 @@ So you are close to reaching the limit. You have to choose your own value, there
         default=0.01,
         help="Request interval in seconds (e.g., 0.1 for 100ms). Currently only supported for Gemini models. Default: 0.01",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=8,
+        help="Number of concurrent requests to make. Default: 8",
+    )
 
     options = parser.parse_args()
 
@@ -406,6 +412,8 @@ So you are close to reaching the limit. You have to choose your own value, there
         "openai",
         "chatgptapi",
         "gpt4",
+        "gpt41",
+        "gpt41mini",
         "gpt4omini",
         "gpt4o",
         "o1preview",
@@ -507,6 +515,8 @@ So you are close to reaching the limit. You have to choose your own value, there
         context_paragraph_limit=options.context_paragraph_limit,
         temperature=options.temperature,
     )
+    if book_type in ["epub", "mobi"]:
+        e.concurrency=options.concurrency
     # other options
     if options.allow_navigable_strings:
         e.allow_navigable_strings = True
@@ -558,6 +568,10 @@ So you are close to reaching the limit. You have to choose your own value, there
             e.translate_model.set_gpt35_models()
     if options.model == "gpt4":
         e.translate_model.set_gpt4_models()
+    if options.model == "gpt41":
+        e.translate_model.set_gpt41_models()
+    if options.model == "gpt41mini":
+        e.translate_model.set_gpt41mini_models()
     if options.model == "gpt4omini":
         e.translate_model.set_gpt4omini_models()
     if options.model == "gpt4o":

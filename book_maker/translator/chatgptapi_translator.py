@@ -6,12 +6,14 @@ from copy import copy
 from os import environ
 from itertools import cycle
 import json
+import httpx
 
 from openai import AzureOpenAI, OpenAI, RateLimitError
 from rich import print
 
 from .base_translator import Base
 from ..config import config
+from ..utils import num_tokens_from_text
 
 CHATGPT_CONFIG = config["translator"]["chatgptapi"]
 
@@ -36,6 +38,15 @@ GPT4_MODEL_LIST = [
     "gpt-4o-2024-05-13",
     "gpt-4-0613",
     "gpt-4-32k-0613",
+]
+
+GPT41_MODEL_LIST = [
+    "gpt-4.1",
+    "gpt-4.1-2025-04-14",
+]
+
+GPT41MINI_MODEL_LIST = [
+    "gpt-4.1-mini",
 ]
 
 GPT4oMINI_MODEL_LIST = [
@@ -67,6 +78,13 @@ O3MINI_MODEL_LIST = [
 
 class ChatGPTAPI(Base):
     DEFAULT_PROMPT = "Please help me to translate,`{text}` to {language}, please return only translated content not include the origin text"
+    GPT41_PRICE_INPUT_1K_TOKENS = 0.002
+    GPT41_PRICE_OUTPUT_1K_TOKENS = 0.008
+    GPT41_PRICE_CACHE_1K_TOKENS = 0.0005
+
+    GPT41MINI_PRICE_INPUT_1K_TOKENS = 0.0004
+    GPT41MINI_PRICE_OUTPUT_1K_TOKENS = 0.0016
+    GPT41MINI_PRICE_CACHE_1K_TOKENS = 0.0001
 
     def __init__(
         self,
@@ -78,11 +96,20 @@ class ChatGPTAPI(Base):
         temperature=1.0,
         context_flag=False,
         context_paragraph_limit=0,
+        concurrency=8,
         **kwargs,
     ) -> None:
         super().__init__(key, language)
         self.key_len = len(key.split(","))
-        self.openai_client = OpenAI(api_key=next(self.keys), base_url=api_base)
+        self.openai_client = OpenAI(
+            api_key=next(self.keys),
+            base_url=api_base,
+            http_client=httpx.Client(
+                limits=httpx.Limits(
+                    max_connections=concurrency, max_keepalive_connections=concurrency
+                )
+            ),
+        )
         self.api_base = api_base
 
         self.prompt_template = (
@@ -174,7 +201,7 @@ class ChatGPTAPI(Base):
         if self.context_flag:
             self.save_context(text, t_text)
 
-        return t_text
+        return t_text, completion
 
     def save_context(self, text, t_text):
         if self.context_paragraph_limit > 0:
@@ -194,10 +221,10 @@ class ChatGPTAPI(Base):
         attempt_count = 0
         max_attempts = 3
         t_text = ""
-
+        completion = None
         while attempt_count < max_attempts:
             try:
-                t_text = self.get_translation(text)
+                t_text, completion = self.get_translation(text)
                 break
             except RateLimitError as e:
                 # todo: better sleep time? why sleep alawys about key_len
@@ -215,6 +242,23 @@ class ChatGPTAPI(Base):
                 print(str(e))
                 return
 
+        if completion and completion.usage:
+            prompt_tokens = completion.usage.prompt_tokens
+            completion_tokens = completion.usage.completion_tokens
+            if self.model in GPT41_MODEL_LIST:
+                cost = (prompt_tokens / 1000) * self.GPT41_PRICE_INPUT_1K_TOKENS + (
+                    completion_tokens / 1000
+                ) * self.GPT41_PRICE_OUTPUT_1K_TOKENS
+                print(
+                    f"'{self.model}' prompt tokens: {prompt_tokens}, completion tokens: {completion_tokens}, cost: ${cost:.4f}"
+                )
+            if self.model in GPT41MINI_MODEL_LIST:
+                cost = (prompt_tokens / 1000) * self.GPT41MINI_PRICE_INPUT_1K_TOKENS + (
+                    completion_tokens / 1000
+                ) * self.GPT41MINI_PRICE_OUTPUT_1K_TOKENS
+                print(
+                    f"'{self.model}' prompt tokens: {prompt_tokens}, completion tokens: {completion_tokens}, cost: ${cost:.4f}"
+                )
         # todo: Determine whether to print according to the cli option
         if needprint:
             print("[bold green]" + re.sub("\n{3,}", "\n\n", t_text) + "[/bold green]")
@@ -223,6 +267,22 @@ class ChatGPTAPI(Base):
         # print(f"translation time: {elapsed_time:.1f}s")
 
         return t_text
+
+    def calculate_cached_cost(self, original_text, translated_text):
+        if self.model in GPT41_MODEL_LIST:
+            prompt_tokens = num_tokens_from_text(original_text)
+            completion_tokens = num_tokens_from_text(translated_text)
+            cost = (prompt_tokens / 1000) * self.GPT41_PRICE_CACHE_1K_TOKENS
+            print(
+                f"'{self.model}' (cached) prompt tokens: {prompt_tokens}, completion tokens: {completion_tokens}, cost: ${cost:.4f}"
+            )
+        if self.model in GPT41MINI_MODEL_LIST:
+            prompt_tokens = num_tokens_from_text(original_text)
+            completion_tokens = num_tokens_from_text(translated_text)
+            cost = (prompt_tokens / 1000) * self.GPT41MINI_PRICE_CACHE_1K_TOKENS
+            print(
+                f"'{self.model}' (cached) prompt tokens: {prompt_tokens}, completion tokens: {completion_tokens}, cost: ${cost:.4f}"
+            )
 
     def translate_and_split_lines(self, text):
         result_str = self.translate(text, False)
@@ -483,6 +543,30 @@ class ChatGPTAPI(Base):
                 i["id"] for i in self.openai_client.models.list().model_dump()["data"]
             ]
             model_list = list(set(my_model_list) & set(GPT4o_MODEL_LIST))
+            print(f"Using model list {model_list}")
+            self.model_list = cycle(model_list)
+
+    def set_gpt41_models(self):
+        # for issue #375 azure can not use model list
+        if self.deployment_id:
+            self.model_list = cycle(["gpt-4.1"])
+        else:
+            my_model_list = [
+                i["id"] for i in self.openai_client.models.list().model_dump()["data"]
+            ]
+            model_list = list(set(my_model_list) & set(GPT41_MODEL_LIST))
+            print(f"Using model list {model_list}")
+            self.model_list = cycle(model_list)
+
+    def set_gpt41mini_models(self):
+        # for issue #375 azure can not use model list
+        if self.deployment_id:
+            self.model_list = cycle(["gpt-4.1-mini"])
+        else:
+            my_model_list = [
+                i["id"] for i in self.openai_client.models.list().model_dump()["data"]
+            ]
+            model_list = list(set(my_model_list) & set(GPT41MINI_MODEL_LIST))
             print(f"Using model list {model_list}")
             self.model_list = cycle(model_list)
 

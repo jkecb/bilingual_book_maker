@@ -40,8 +40,9 @@ def test_google_translate_epub(test_book_dir, tmpdir):
     assert os.path.getsize(os.path.join(tmpdir, "Liber_Esther_bilingual.epub")) != 0
 
 
-def test_deepl_free_translate_epub(test_book_dir, tmpdir):
-    """Test deepl free translate epub"""
+    @pytest.mark.skip(reason="External service issue with DeepL Free API")
+    def test_deepl_free_translate_epub(test_book_dir, tmpdir):
+        """Test deepl free translate epub"""
     shutil.copyfile(
         os.path.join(test_book_dir, "Liber_Esther.epub"),
         os.path.join(tmpdir, "Liber_Esther.epub"),
@@ -269,7 +270,7 @@ def test_openai_translate_epub_ja_prompt_txt(test_book_dir, tmpdir):
             "--language",
             "ja",
             "--model",
-            "gpt3",
+            "chatgptapi",
             "--prompt",
             "prompt_template_sample.txt",
         ],

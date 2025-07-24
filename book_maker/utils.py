@@ -1,4 +1,7 @@
 import tiktoken
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Callable, Any
 
 # Borrowed from : https://github.com/openai/whisper
 LANGUAGES = {
@@ -132,25 +135,27 @@ def prompt_config_to_kwargs(prompt_config):
 
 
 # ref: https://platform.openai.com/docs/guides/chat/introduction
-def num_tokens_from_text(text, model="gpt-3.5-turbo-0301"):
-    messages = (
+def num_tokens_from_text(text, model="gpt-4.1"):
+    messages = [
         {
             "role": "user",
             "content": text,
         },
-    )
+    ]
 
     """Returns the number of tokens used by a list of messages."""
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
+        # Default to cl100k_base encoding for newer models including gpt-4.1
         encoding = tiktoken.get_encoding("cl100k_base")
-    if model == "gpt-3.5-turbo-0301":  # note: future models may deviate from this
+    
+    # Updated token counting for modern OpenAI models (gpt-3.5-turbo, gpt-4, gpt-4.1, etc.)
+    if model in ["gpt-3.5-turbo-0301"]:
+        # Legacy model handling
         num_tokens = 0
         for message in messages:
-            num_tokens += (
-                4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
-            )
+            num_tokens += 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
             for key, value in message.items():
                 num_tokens += len(encoding.encode(value))
                 if key == "name":  # if there's a name, the role is omitted
@@ -158,7 +163,54 @@ def num_tokens_from_text(text, model="gpt-3.5-turbo-0301"):
         num_tokens += 2  # every reply is primed with <im_start>assistant
         return num_tokens
     else:
-        raise NotImplementedError(
-            f"""num_tokens_from_messages() is not presently implemented for model {model}.
-  See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."""
-        )
+        # Modern models (gpt-3.5-turbo, gpt-4, gpt-4.1, etc.)
+        num_tokens = 0
+        for message in messages:
+            num_tokens += 3  # every message follows <|start|>{role/name}\n{content}<|end|\>\n
+            for key, value in message.items():
+                if isinstance(value, str):
+                    num_tokens += len(encoding.encode(value))
+                if key == "name":  # if there's a name, the role is omitted
+                    num_tokens += 1  # role is always required and always 1 token
+        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+        return num_tokens
+
+
+def process_concurrently(items: List[Any], func: Callable, max_workers: int = 8) -> List[Any]:
+    """
+    Process a list of items concurrently using ThreadPoolExecutor.
+    
+    Args:
+        items: List of items to process
+        func: Function to apply to each item
+        max_workers: Maximum number of concurrent workers (default: 8)
+    
+    Returns:
+        List of results in the same order as input items
+    """
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = list(executor.map(func, items))
+    return results
+
+
+async def process_concurrently_async(items: List[Any], async_func: Callable, max_concurrent: int = 8) -> List[Any]:
+    """
+    Process a list of items concurrently using asyncio semaphore.
+    
+    Args:
+        items: List of items to process
+        async_func: Async function to apply to each item
+        max_concurrent: Maximum number of concurrent operations (default: 8)
+    
+    Returns:
+        List of results in the same order as input items
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def limited_func(item):
+        async with semaphore:
+            return await async_func(item)
+    
+    tasks = [limited_func(item) for item in items]
+    results = await asyncio.gather(*tasks)
+    return results

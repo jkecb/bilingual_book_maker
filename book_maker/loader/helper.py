@@ -2,6 +2,7 @@ import re
 import backoff
 import logging
 from copy import copy
+from book_maker.utils import process_concurrently
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -55,14 +56,24 @@ class EPUBBookLoaderHelper:
         if not wait_p_list:
             return
 
-        result_txt_list = self.translate_model.translate_list(wait_p_list)
+        # Check if we should use concurrent processing
+        if len(wait_p_list) > 1 and hasattr(self.translate_model, 'translate'):
+            # Use concurrent processing for multiple paragraphs
+            def translate_paragraph(p):
+                return shorter_result_link(self.translate_with_backoff(p.text, context_flag))
+            
+            # Process paragraphs concurrently with max 8 workers
+            result_txt_list = process_concurrently(wait_p_list, translate_paragraph, max_workers=8)
+        else:
+            # Fallback to original batch processing for single items or models without individual translate
+            result_txt_list = self.translate_model.translate_list(wait_p_list)
 
         for i in range(len(wait_p_list)):
             if i < len(result_txt_list):
                 p = wait_p_list[i]
                 self.insert_trans(
                     p,
-                    shorter_result_link(result_txt_list[i]),
+                    result_txt_list[i] if isinstance(result_txt_list[i], str) else shorter_result_link(result_txt_list[i]),
                     self.translation_style,
                     single_translate,
                 )
