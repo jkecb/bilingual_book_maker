@@ -26,7 +26,7 @@ A sample book, `test_books/animal_farm.epub`, is provided for testing purposes.
 
 ```shell
 pip install -r requirements.txt
-python3 make_book.py --book_name test_books/animal_farm.epub --openai_key ${openai_key} --test
+python3 make_book.py --book_name test_books/animal_farm.epub --openai_key ${openai_key} --test --concurrency 8 --language zh-hant --use_context
 OR
 pip install -U bbook_maker
 bbook --book_name test_books/animal_farm.epub --openai_key ${openai_key} --test
