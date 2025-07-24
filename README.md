@@ -37,8 +37,10 @@ bbook --book_name test_books/animal_farm.epub --openai_key ${openai_key} --test
 - Use `--openai_key` option to specify OpenAI API key. If you have multiple keys, separate them by commas (xxx,xxx,xxx) to reduce errors caused by API call limits.
   Or, just set environment variable `BBM_OPENAI_API_KEY` instead.
 - A sample book, `test_books/animal_farm.epub`, is provided for testing purposes.
-- The default underlying model is [GPT-3.5-turbo](https://openai.com/blog/introducing-chatgpt-and-whisper-apis), which is used by ChatGPT currently. Use `--model gpt4` to change the underlying model to `GPT4`. You can also use `GPT4omini`.
+- The default underlying model is `gpt-4.1-mini`. Use `--model gpt4` to change the underlying model to `GPT4`.
 - Important to note that `gpt-4` is significantly more expensive than `gpt-4-turbo`, but to avoid bumping into rate limits, we automatically balance queries across `gpt-4-1106-preview`, `gpt-4`, `gpt-4-32k`, `gpt-4-0613`,`gpt-4-32k-0613`.
+- The pricing for `gpt-4.1` is $0.002 for input and $0.008 for output per 1K tokens. For cached translations, the cost is $0.0005 per 1K tokens.
+- The pricing for `gpt-4.1-mini` is $0.0004 for input and $0.0016 for output per 1K tokens. For cached translations, the cost is $0.0001 per 1K tokens.
 - If you want to use a specific model alias with OpenAI (eg `gpt-4-1106-preview` or `gpt-3.5-turbo-0125`), you can use `--model openai --model_list gpt-4-1106-preview,gpt-3.5-turbo-0125`. `--model_list` takes a comma-separated list of model aliases.
 - If using chatgptapi, you can add `--use_context` to add a context paragraph to each passage sent to the model for translation (see below).
 
@@ -234,6 +236,14 @@ bbook --book_name test_books/animal_farm.epub --openai_key ${openai_key} --test
   ```shell
   python3 "make_book.py" --book_name "test_books/animal_farm.epub" --retranslate 'test_books/animal_farm_bilingual.epub' 'index_split_002.html' 'in spite of the present book shortage which'
   ```
+
+- `--concurrency`:
+
+  Use `--concurrency` to set the number of concurrent requests to make. Default: 8.
+
+- `--test_num`:
+
+  Use `--test_num` to specify how many paragraphs will be translated for testing. Default: 10.
 
 ### Examples
 
